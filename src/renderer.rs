@@ -1,18 +1,24 @@
 use std::sync::Arc;
 
-use wgpu::{BackendOptions, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, ColorTargetState, ColorWrites, ComputePipeline, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, FragmentState, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, MultisampleState, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, SamplerDescriptor, ShaderStages, Surface, SurfaceConfiguration, Texture, TextureDescriptor, TextureUsages, TextureViewDescriptor, VertexState};
+use wgpu::{BackendOptions, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, ColorTargetState, ColorWrites, ComputePipeline, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, FragmentState, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, MultisampleState, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, SamplerDescriptor, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureViewDescriptor, VertexState};
 use winit::window::Window;
 
+#[derive(PartialEq, Eq)]
+enum RenderStage {
+    First,
+    Second
+}
 
 pub struct Renderer<'a> {
     surface: Surface<'a>,
     device: Device,
     queue: Queue,
     config: SurfaceConfiguration,
-    storage_texture1: Texture,
-    storage_texture2: Texture,
-    bind_group1: BindGroup,
-    bind_group2: BindGroup,
+    render_stage: RenderStage,
+    bind_group_compute_1: BindGroup,
+    bind_group_compute_2: BindGroup,
+    bind_group_render_1: BindGroup,
+    bind_group_render_2: BindGroup,
     compute_pipeline: ComputePipeline,
     render_pipeline: RenderPipeline,
     window: Arc<Window>
@@ -22,9 +28,9 @@ impl<'a> Renderer<'a> {
     fn create_bind_group(
         config: &wgpu::wgt::SurfaceConfiguration<Vec<wgpu::TextureFormat>>,
         device: &Device
-    ) -> (Texture, Texture, BindGroupLayout, BindGroupLayout, BindGroup, BindGroup) {
+    ) -> (BindGroupLayout, BindGroupLayout, BindGroup, BindGroup, BindGroup, BindGroup) {
 
-        let storage_texture1 = device.create_texture(&TextureDescriptor {
+        let storage_texture_1 = device.create_texture(&TextureDescriptor {
             label: None,
             size: Extent3d {
                 width: config.width,
@@ -35,10 +41,10 @@ impl<'a> Renderer<'a> {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::STORAGE_BINDING,
+            usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
             view_formats: &[]
         });
-        let storage_texture2 = device.create_texture(&TextureDescriptor {
+        let storage_texture_2 = device.create_texture(&TextureDescriptor {
             label: None,
             size: Extent3d {
                 width: config.width,
@@ -48,17 +54,17 @@ impl<'a> Renderer<'a> {
             mip_level_count: 1,
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            format: config.format,
-            usage: TextureUsages::TEXTURE_BINDING,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
             view_formats: &[]
         });
 
         let sampler = device.create_sampler(&SamplerDescriptor::default());
 
-        let view1 = storage_texture1.create_view(&TextureViewDescriptor::default());
-        let view2 = storage_texture2.create_view(&TextureViewDescriptor::default());
+        let view_1 = storage_texture_1.create_view(&TextureViewDescriptor::default());
+        let view_2 = storage_texture_2.create_view(&TextureViewDescriptor::default());
 
-        let bind_group_layout1 = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        let bind_group_layout_compute = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: None,
             entries: &[BindGroupLayoutEntry {
                 binding: 0,
@@ -71,7 +77,7 @@ impl<'a> Renderer<'a> {
                 count: None
             }]
         });
-        let bind_group_layout2 = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        let bind_group_layout_render = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: None,
             entries: &[
                 BindGroupLayoutEntry {
@@ -94,23 +100,48 @@ impl<'a> Renderer<'a> {
             ]
         });
 
-        let bind_group1 = device.create_bind_group(&BindGroupDescriptor {
+        let bind_group_compute_1 = device.create_bind_group(&BindGroupDescriptor {
             label: None,
-            layout: &bind_group_layout1,
+            layout: &bind_group_layout_compute,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view1)
+                    resource: wgpu::BindingResource::TextureView(&view_1)
                 }
             ]
         });
-        let bind_group2 = device.create_bind_group(&BindGroupDescriptor {
+        let bind_group_compute_2 = device.create_bind_group(&BindGroupDescriptor {
             label: None,
-            layout: &bind_group_layout2,
+            layout: &bind_group_layout_compute,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view2)
+                    resource: wgpu::BindingResource::TextureView(&view_2)
+                }
+            ]
+        });
+
+        let bind_group_render_1 = device.create_bind_group(&BindGroupDescriptor {
+            label: None,
+            layout: &bind_group_layout_render,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view_1)
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&sampler)
+                }
+            ]
+        });
+        let bind_group_render_2 = device.create_bind_group(&BindGroupDescriptor {
+            label: None,
+            layout: &bind_group_layout_render,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view_2)
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -119,7 +150,14 @@ impl<'a> Renderer<'a> {
             ]
         });
 
-        return (storage_texture1, storage_texture2, bind_group_layout1, bind_group_layout2, bind_group1, bind_group2);
+        return (
+            bind_group_layout_compute, 
+            bind_group_layout_render, 
+            bind_group_compute_1, 
+            bind_group_compute_2,
+            bind_group_render_1,
+            bind_group_render_2
+        );
     }
 
     fn create_compute_pipeline(bind_group_layout: &BindGroupLayout, device: &Device) -> ComputePipeline {
@@ -227,18 +265,18 @@ impl<'a> Renderer<'a> {
             desired_maximum_frame_latency: 2,
         };
 
-        let (
-            storage_texture1, 
-            storage_texture2, 
-            bind_group_layout1, 
-            bind_group_layout2, 
-            bind_group1,
-            bind_group2
+        let ( 
+            bind_group_layout_compute, 
+            bind_group_layout_render, 
+            bind_group_compute_1,
+            bind_group_compute_2,
+            bind_group_render_1,
+            bind_group_render_2
 
         ) = Self::create_bind_group(&config, &device);
 
-        let compute_pipeline = Self::create_compute_pipeline(&bind_group_layout1, &device);
-        let render_pipeline = Self::create_render_pipeline(&bind_group_layout2, &device, &config);
+        let compute_pipeline = Self::create_compute_pipeline(&bind_group_layout_compute, &device);
+        let render_pipeline = Self::create_render_pipeline(&bind_group_layout_render, &device, &config);
 
         surface.configure(&device, &config);
 
@@ -248,10 +286,11 @@ impl<'a> Renderer<'a> {
                 device,
                 queue,
                 config,
-                storage_texture1,
-                storage_texture2,
-                bind_group1,
-                bind_group2,
+                render_stage: RenderStage::First,
+                bind_group_compute_1,
+                bind_group_compute_2,
+                bind_group_render_1,
+                bind_group_render_2,
                 compute_pipeline,
                 render_pipeline,
                 window
@@ -303,7 +342,13 @@ impl<'a> Renderer<'a> {
             timestamp_writes: None
         });
 
-        compute_pass.set_bind_group(0, Some(&self.bind_group1), &[]);
+        let compute_bind_group = if self.render_stage == RenderStage::First {
+            &self.bind_group_compute_1
+        } else {
+            &self.bind_group_compute_2
+        };
+
+        compute_pass.set_bind_group(0, Some(compute_bind_group), &[]);
         compute_pass.set_pipeline(&self.compute_pipeline);
         compute_pass.dispatch_workgroups((self.config.width + 7) / 8, (self.config.height + 7) / 8, 1);
 
@@ -331,7 +376,13 @@ impl<'a> Renderer<'a> {
             multiview_mask: None,
         });
 
-        render_pass.set_bind_group(0, Some(&self.bind_group2), &[]);
+        let render_bind_group = if self.render_stage == RenderStage::First {
+            &self.bind_group_render_2
+        } else {
+            &self.bind_group_render_1
+        };
+
+        render_pass.set_bind_group(0, Some(render_bind_group), &[]);
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.draw(0..3, 0..1);
 
@@ -340,7 +391,10 @@ impl<'a> Renderer<'a> {
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
-        std::mem::swap(&mut self.storage_texture1, &mut self.storage_texture2);
+        match self.render_stage {
+            RenderStage::First => {self.render_stage = RenderStage::Second},
+            RenderStage::Second => {self.render_stage = RenderStage::First}
+        }
 
         Ok(())
 
