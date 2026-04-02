@@ -1,0 +1,10 @@
+[package]
+name = "friggin-tuff-particle-war-simulation"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+wgpu = "29.0.1"
+winit = "0.30.13"
+anyhow = "1.0.102"
+pollster = "0.4.0"
