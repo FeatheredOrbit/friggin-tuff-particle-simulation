@@ -5,6 +5,7 @@ use crate::engine::Engine;
 mod engine;
 mod renderer;
 mod constants;
+mod shader_data;
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();

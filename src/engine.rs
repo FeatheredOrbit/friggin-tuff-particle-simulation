@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use winit::{application::ApplicationHandler, dpi::LogicalSize, window::{Window, WindowAttributes}};
 
-use crate::renderer::Renderer;
+use crate::{constants::NUMBER_OF_PARTICLES, renderer::Renderer, shader_data::ParticleData};
 
 
 #[derive(Default)]
@@ -18,7 +18,7 @@ impl<'a> ApplicationHandler for Engine<'a> {
                 WindowAttributes::default()
                 .with_inner_size(LogicalSize::new(1200, 600))
                 .with_resizable(false)
-                .with_title("Friggin tuff particle simulation")
+                .with_title("Friggin Tuff Particle Simulation")
             ).unwrap()
         );
 
@@ -26,6 +26,14 @@ impl<'a> ApplicationHandler for Engine<'a> {
 
         if self.renderer.is_none() {
             self.renderer = Some(pollster::block_on(Renderer::new(window)).unwrap());
+
+            let mut particles: Vec<ParticleData> = Vec::new();
+
+            for _ in 0..NUMBER_OF_PARTICLES {
+                particles.push(ParticleData::new(crate::shader_data::ParticleType::BLUE));
+            }
+
+            self.renderer.as_mut().unwrap().set_particles(particles);
         }
     }
 

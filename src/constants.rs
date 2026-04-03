@@ -1,1 +1,2 @@
-pub const NUMBER_OF_PARTICLES: u32 = 200;
+pub const MAX_PARTICLES: u32 = 1000000;
+pub const NUMBER_OF_PARTICLES: u32 = 100;

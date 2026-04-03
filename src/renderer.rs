@@ -1,15 +1,9 @@
 use std::sync::Arc;
 
-use wgpu::{BackendOptions, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferUsages, ColorTargetState, ColorWrites, ComputePipeline, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, FragmentState, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, MultisampleState, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, SamplerDescriptor, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureViewDescriptor, VertexState, util::{BufferInitDescriptor, DeviceExt}};
+use wgpu::{BackendOptions, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, Buffer, BufferUsages, ColorTargetState, ColorWrites, ComputePipeline, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, FragmentState, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, MultisampleState, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, SamplerDescriptor, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureViewDescriptor, VertexState, util::{BufferInitDescriptor, DeviceExt}, wgt::BufferDescriptor};
 use winit::window::Window;
 
-use crate::constants::NUMBER_OF_PARTICLES;
-
-#[repr(C)]
-#[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
-struct Uniforms {
-    number_of_particles: u32
-}
+use crate::{constants::{MAX_PARTICLES, NUMBER_OF_PARTICLES}, shader_data::{ParticleData, Uniforms}};
 
 #[derive(PartialEq, Eq)]
 enum RenderStage {
@@ -23,6 +17,7 @@ pub struct Renderer<'a> {
     queue: Queue,
     config: SurfaceConfiguration,
     render_stage: RenderStage,
+    storage_buffer: Buffer,
     bind_group_compute_1: BindGroup,
     bind_group_compute_2: BindGroup,
     bind_group_render_1: BindGroup,
@@ -36,7 +31,7 @@ impl<'a> Renderer<'a> {
     fn create_bind_group(
         config: &wgpu::wgt::SurfaceConfiguration<Vec<wgpu::TextureFormat>>,
         device: &Device
-    ) -> (BindGroupLayout, BindGroupLayout, BindGroup, BindGroup, BindGroup, BindGroup) {
+    ) -> (Buffer, BindGroupLayout, BindGroupLayout, BindGroup, BindGroup, BindGroup, BindGroup) {
 
         let storage_texture_1 = device.create_texture(&TextureDescriptor {
             label: None,
@@ -52,6 +47,7 @@ impl<'a> Renderer<'a> {
             usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
             view_formats: &[]
         });
+
         let storage_texture_2 = device.create_texture(&TextureDescriptor {
             label: None,
             size: Extent3d {
@@ -74,6 +70,13 @@ impl<'a> Renderer<'a> {
             label: None,
             contents: bytemuck::bytes_of(&uniforms),
             usage: BufferUsages::UNIFORM
+        });
+
+        let storage_buffer = device.create_buffer(&BufferDescriptor {
+            label: None,
+            size: (size_of::<ParticleData>() * MAX_PARTICLES as usize) as u64,
+            usage: BufferUsages::STORAGE | BufferUsages::COPY_DST,
+            mapped_at_creation: false
         });
 
         let sampler = device.create_sampler(&SamplerDescriptor::default());
@@ -99,6 +102,16 @@ impl<'a> Renderer<'a> {
                     visibility: ShaderStages::COMPUTE,
                     ty: wgpu::BindingType::Buffer { 
                         ty: wgpu::BufferBindingType::Uniform, 
+                        has_dynamic_offset: false, 
+                        min_binding_size: None 
+                    },
+                    count: None
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer { 
+                        ty: wgpu::BufferBindingType::Storage { read_only: false }, 
                         has_dynamic_offset: false, 
                         min_binding_size: None 
                     },
@@ -140,7 +153,11 @@ impl<'a> Renderer<'a> {
                 BindGroupEntry {
                     binding: 1,
                     resource: uniform_buffer.as_entire_binding()
-                }
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: storage_buffer.as_entire_binding()
+                },
             ]
         });
         let bind_group_compute_2 = device.create_bind_group(&BindGroupDescriptor {
@@ -154,7 +171,11 @@ impl<'a> Renderer<'a> {
                 BindGroupEntry {
                     binding: 1,
                     resource: uniform_buffer.as_entire_binding()
-                }
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: storage_buffer.as_entire_binding()
+                },
             ]
         });
 
@@ -188,6 +209,7 @@ impl<'a> Renderer<'a> {
         });
 
         return (
+            storage_buffer,
             bind_group_layout_compute, 
             bind_group_layout_render, 
             bind_group_compute_1, 
@@ -303,6 +325,7 @@ impl<'a> Renderer<'a> {
         };
 
         let ( 
+            storage_buffer,
             bind_group_layout_compute, 
             bind_group_layout_render, 
             bind_group_compute_1,
@@ -324,6 +347,7 @@ impl<'a> Renderer<'a> {
                 queue,
                 config,
                 render_stage: RenderStage::First,
+                storage_buffer,
                 bind_group_compute_1,
                 bind_group_compute_2,
                 bind_group_render_1,
@@ -343,6 +367,12 @@ impl<'a> Renderer<'a> {
         self.surface.configure(&self.device, &self.config);
     }
 }
+
+    pub fn set_particles(&mut self, particles: Vec<ParticleData>) {
+        let particles: &[u8] = bytemuck::cast_slice(particles.as_slice());
+        
+        self.queue.write_buffer(&self.storage_buffer, 0, particles);
+    }
 
     pub fn render(&mut self) -> anyhow::Result<()> {
         self.window.request_redraw();
