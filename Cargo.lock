@@ -443,6 +443,7 @@ name = "friggin-tuff-particle-war-simulation"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "bytemuck",
  "pollster",
  "wgpu",
  "winit",

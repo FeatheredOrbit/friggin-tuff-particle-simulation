@@ -1,7 +1,15 @@
 use std::sync::Arc;
 
-use wgpu::{BackendOptions, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, ColorTargetState, ColorWrites, ComputePipeline, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, FragmentState, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, MultisampleState, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, SamplerDescriptor, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureViewDescriptor, VertexState};
+use wgpu::{BackendOptions, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferUsages, ColorTargetState, ColorWrites, ComputePipeline, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, FragmentState, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, MultisampleState, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, SamplerDescriptor, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureViewDescriptor, VertexState, util::{BufferInitDescriptor, DeviceExt}};
 use winit::window::Window;
+
+use crate::constants::NUMBER_OF_PARTICLES;
+
+#[repr(C)]
+#[derive(Clone, Copy, bytemuck::Zeroable, bytemuck::Pod)]
+struct Uniforms {
+    number_of_particles: u32
+}
 
 #[derive(PartialEq, Eq)]
 enum RenderStage {
@@ -59,6 +67,15 @@ impl<'a> Renderer<'a> {
             view_formats: &[]
         });
 
+        let uniforms = Uniforms {
+            number_of_particles: NUMBER_OF_PARTICLES
+        };
+        let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
+            label: None,
+            contents: bytemuck::bytes_of(&uniforms),
+            usage: BufferUsages::UNIFORM
+        });
+
         let sampler = device.create_sampler(&SamplerDescriptor::default());
 
         let view_1 = storage_texture_1.create_view(&TextureViewDescriptor::default());
@@ -66,16 +83,28 @@ impl<'a> Renderer<'a> {
 
         let bind_group_layout_compute = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: None,
-            entries: &[BindGroupLayoutEntry {
-                binding: 0,
-                visibility: ShaderStages::COMPUTE,
-                ty: wgpu::BindingType::StorageTexture { 
-                    access: wgpu::StorageTextureAccess::WriteOnly, 
-                    format: wgpu::TextureFormat::Rgba8Unorm, 
-                    view_dimension: wgpu::TextureViewDimension::D2
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture { 
+                        access: wgpu::StorageTextureAccess::WriteOnly, 
+                        format: wgpu::TextureFormat::Rgba8Unorm, 
+                        view_dimension: wgpu::TextureViewDimension::D2
+                    },
+                    count: None
                 },
-                count: None
-            }]
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer { 
+                        ty: wgpu::BufferBindingType::Uniform, 
+                        has_dynamic_offset: false, 
+                        min_binding_size: None 
+                    },
+                    count: None
+                }
+            ]
         });
         let bind_group_layout_render = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: None,
@@ -107,6 +136,10 @@ impl<'a> Renderer<'a> {
                 BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(&view_1)
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: uniform_buffer.as_entire_binding()
                 }
             ]
         });
@@ -117,6 +150,10 @@ impl<'a> Renderer<'a> {
                 BindGroupEntry {
                     binding: 0,
                     resource: wgpu::BindingResource::TextureView(&view_2)
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: uniform_buffer.as_entire_binding()
                 }
             ]
         });
@@ -350,7 +387,7 @@ impl<'a> Renderer<'a> {
 
         compute_pass.set_bind_group(0, Some(compute_bind_group), &[]);
         compute_pass.set_pipeline(&self.compute_pipeline);
-        compute_pass.dispatch_workgroups((self.config.width + 7) / 8, (self.config.height + 7) / 8, 1);
+        compute_pass.dispatch_workgroups((NUMBER_OF_PARTICLES + 63) / 64, 1, 1);
 
         drop(compute_pass);
 

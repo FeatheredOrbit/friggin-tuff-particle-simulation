@@ -1,0 +1,1 @@
+pub const NUMBER_OF_PARTICLES: u32 = 200;

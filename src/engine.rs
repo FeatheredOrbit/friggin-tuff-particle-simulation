@@ -16,7 +16,7 @@ impl<'a> ApplicationHandler for Engine<'a> {
         let window = Arc::new(
             event_loop.create_window(
                 WindowAttributes::default()
-                .with_inner_size(LogicalSize::new(800, 600))
+                .with_inner_size(LogicalSize::new(1200, 600))
                 .with_resizable(false)
                 .with_title("Friggin tuff particle simulation")
             ).unwrap()

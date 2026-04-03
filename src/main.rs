@@ -4,6 +4,7 @@ use crate::engine::Engine;
 
 mod engine;
 mod renderer;
+mod constants;
 
 fn main() {
     let event_loop = EventLoop::new().unwrap();
