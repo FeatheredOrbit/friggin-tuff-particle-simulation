@@ -29,6 +29,24 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
         return;
     }
 
+    draw_texture(id);
+}
+
+fn behave(id: u32) {
+
+    for (var iter_id = 0u; iter_id < uniforms.number_of_particles; iter_id++) {
+
+        if (iter_id == id) { continue; }
+
+        // Do stuff
+        
+    }
+
+}
+
+
+
+fn draw_texture(id: u32) {
     var color = vec4<f32>(0.0, 0.0, 0.0, 1.0);
 
     if particle_data[id].data_1.x == RED {

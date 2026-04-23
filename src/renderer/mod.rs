@@ -1,15 +1,12 @@
 use std::sync::Arc;
 
-use wgpu::{BackendOptions, Backends, BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, Buffer, BufferUsages, ColorTargetState, ColorWrites, ComputePipeline, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, FragmentState, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, MultisampleState, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipeline, RenderPipelineDescriptor, RequestAdapterOptions, SamplerDescriptor, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureViewDescriptor, VertexState, util::{BufferInitDescriptor, DeviceExt}, wgt::BufferDescriptor};
+use wgpu::{BackendOptions, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferUsages, ColorTargetState, ColorWrites, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, FragmentState, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, MultisampleState, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipelineDescriptor, RequestAdapterOptions, SamplerDescriptor, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureViewDescriptor, VertexState, util::{BufferInitDescriptor, DeviceExt}, wgt::BufferDescriptor};
 use winit::window::Window;
 
-use crate::{constants::{MAX_PARTICLES, NUMBER_OF_PARTICLES}, shader_data::{ParticleData, Uniforms}};
+use crate::{constants::{MAX_PARTICLES, NUMBER_OF_PARTICLES}, renderer::{misc::{BindGroupLayouts, BindGroups, Buffers, ComputePipelines, RenderPipelines, RenderStage, Textures}, shader_data::{ParticleData, Uniforms}}};
 
-#[derive(PartialEq, Eq)]
-enum RenderStage {
-    First,
-    Second
-}
+pub mod shader_data;
+mod misc;
 
 pub struct Renderer<'a> {
     surface: Surface<'a>,
@@ -17,22 +14,15 @@ pub struct Renderer<'a> {
     queue: Queue,
     config: SurfaceConfiguration,
     render_stage: RenderStage,
-    storage_buffer: Buffer,
-    bind_group_compute_1: BindGroup,
-    bind_group_compute_2: BindGroup,
-    bind_group_render_1: BindGroup,
-    bind_group_render_2: BindGroup,
-    compute_pipeline: ComputePipeline,
-    render_pipeline: RenderPipeline,
+    buffers: Buffers,
+    bind_groups: BindGroups,
+    render_pipelines: RenderPipelines,
+    compute_pipelines: ComputePipelines,
     window: Arc<Window>
 }
 
 impl<'a> Renderer<'a> {
-    fn create_bind_group(
-        config: &wgpu::wgt::SurfaceConfiguration<Vec<wgpu::TextureFormat>>,
-        device: &Device
-    ) -> (Buffer, BindGroupLayout, BindGroupLayout, BindGroup, BindGroup, BindGroup, BindGroup) {
-
+    fn create_textures(device: &Device, config: &SurfaceConfiguration) -> Textures {
         let storage_texture_1 = device.create_texture(&TextureDescriptor {
             label: None,
             size: Extent3d {
@@ -63,6 +53,14 @@ impl<'a> Renderer<'a> {
             view_formats: &[]
         });
 
+        Textures { 
+            storage_1: storage_texture_1, 
+            storage_2: storage_texture_2
+        }
+
+    }
+
+    fn create_buffers(device: &Device) -> Buffers {
         let uniforms = Uniforms {
             number_of_particles: NUMBER_OF_PARTICLES
         };
@@ -79,10 +77,25 @@ impl<'a> Renderer<'a> {
             mapped_at_creation: false
         });
 
+        Buffers {
+            uniform: uniform_buffer,
+            storage: storage_buffer
+        }
+
+    }
+
+    fn create_bind_groups(
+        config: &wgpu::wgt::SurfaceConfiguration<Vec<wgpu::TextureFormat>>,
+        device: &Device
+    ) -> (Buffers, BindGroupLayouts, BindGroups) {
+
+        let textures = Self::create_textures(device, config);
+        let buffers = Self::create_buffers(device);
+        
         let sampler = device.create_sampler(&SamplerDescriptor::default());
 
-        let view_1 = storage_texture_1.create_view(&TextureViewDescriptor::default());
-        let view_2 = storage_texture_2.create_view(&TextureViewDescriptor::default());
+        let view_1 = textures.storage_1.create_view(&TextureViewDescriptor::default());
+        let view_2 = textures.storage_2.create_view(&TextureViewDescriptor::default());
 
         let bind_group_layout_compute = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: None,
@@ -142,9 +155,14 @@ impl<'a> Renderer<'a> {
             ]
         });
 
+        let bind_group_layouts = BindGroupLayouts {
+            compute: bind_group_layout_compute,
+            render: bind_group_layout_render
+        };
+
         let bind_group_compute_1 = device.create_bind_group(&BindGroupDescriptor {
             label: None,
-            layout: &bind_group_layout_compute,
+            layout: &bind_group_layouts.compute,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
@@ -152,17 +170,17 @@ impl<'a> Renderer<'a> {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: uniform_buffer.as_entire_binding()
+                    resource: buffers.uniform.as_entire_binding()
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: storage_buffer.as_entire_binding()
+                    resource: buffers.storage.as_entire_binding()
                 },
             ]
         });
         let bind_group_compute_2 = device.create_bind_group(&BindGroupDescriptor {
             label: None,
-            layout: &bind_group_layout_compute,
+            layout: &bind_group_layouts.compute,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
@@ -170,18 +188,18 @@ impl<'a> Renderer<'a> {
                 },
                 BindGroupEntry {
                     binding: 1,
-                    resource: uniform_buffer.as_entire_binding()
+                    resource: buffers.uniform.as_entire_binding()
                 },
                 BindGroupEntry {
                     binding: 2,
-                    resource: storage_buffer.as_entire_binding()
+                    resource: buffers.storage.as_entire_binding()
                 },
             ]
         });
 
         let bind_group_render_1 = device.create_bind_group(&BindGroupDescriptor {
             label: None,
-            layout: &bind_group_layout_render,
+            layout: &bind_group_layouts.render,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
@@ -195,7 +213,7 @@ impl<'a> Renderer<'a> {
         });
         let bind_group_render_2 = device.create_bind_group(&BindGroupDescriptor {
             label: None,
-            layout: &bind_group_layout_render,
+            layout: &bind_group_layouts.render,
             entries: &[
                 BindGroupEntry {
                     binding: 0,
@@ -208,27 +226,33 @@ impl<'a> Renderer<'a> {
             ]
         });
 
+        let bind_groups = BindGroups {
+            compute_1: bind_group_compute_1,
+            compute_2: bind_group_compute_2,
+            render_1: bind_group_render_1,
+            render_2: bind_group_render_2
+        };
+
         return (
-            storage_buffer,
-            bind_group_layout_compute, 
-            bind_group_layout_render, 
-            bind_group_compute_1, 
-            bind_group_compute_2,
-            bind_group_render_1,
-            bind_group_render_2
+            buffers,
+            bind_group_layouts,
+            bind_groups
         );
     }
 
-    fn create_compute_pipeline(bind_group_layout: &BindGroupLayout, device: &Device) -> ComputePipeline {
+    fn create_compute_pipelines(
+        bind_group_layout: &BindGroupLayout, 
+        device: &Device
+    ) -> ComputePipelines {
+
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts: &[Some(bind_group_layout)],
             immediate_size: 0
         });
 
-        let module = device.create_shader_module(wgpu::include_wgsl!("../shaders/compute.wgsl"));
-
-        return device.create_compute_pipeline(&ComputePipelineDescriptor {
+        let module = device.create_shader_module(wgpu::include_wgsl!("../../shaders/compute.wgsl"));
+        let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             module: &module,
@@ -236,13 +260,17 @@ impl<'a> Renderer<'a> {
             compilation_options: PipelineCompilationOptions::default(),
             cache: None
         });
+
+        ComputePipelines {
+            main: pipeline
+        }
     }
 
-    fn create_render_pipeline(
+    fn create_render_pipelines(
         bind_group_layout: &BindGroupLayout, 
         device: &Device,
         config: &wgpu::wgt::SurfaceConfiguration<Vec<wgpu::TextureFormat>>
-    ) -> RenderPipeline {
+    ) -> RenderPipelines {
 
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
@@ -250,9 +278,8 @@ impl<'a> Renderer<'a> {
             immediate_size: 0
         });
 
-        let module = device.create_shader_module(wgpu::include_wgsl!("../shaders/render.wgsl"));
-
-        return device.create_render_pipeline(&RenderPipelineDescriptor {
+        let module = device.create_shader_module(wgpu::include_wgsl!("../../shaders/render.wgsl"));
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
             label: None,
             layout: Some(&pipeline_layout),
             vertex: VertexState {
@@ -277,6 +304,10 @@ impl<'a> Renderer<'a> {
             multiview_mask: None,
             cache: None
         });
+
+        RenderPipelines {
+            main: pipeline
+        }
     }
 
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
@@ -325,18 +356,13 @@ impl<'a> Renderer<'a> {
         };
 
         let ( 
-            storage_buffer,
-            bind_group_layout_compute, 
-            bind_group_layout_render, 
-            bind_group_compute_1,
-            bind_group_compute_2,
-            bind_group_render_1,
-            bind_group_render_2
+            buffers,
+            bind_group_layouts,
+            bind_groups
+        ) = Self::create_bind_groups(&config, &device);
 
-        ) = Self::create_bind_group(&config, &device);
-
-        let compute_pipeline = Self::create_compute_pipeline(&bind_group_layout_compute, &device);
-        let render_pipeline = Self::create_render_pipeline(&bind_group_layout_render, &device, &config);
+        let compute_pipelines = Self::create_compute_pipelines(&bind_group_layouts.compute, &device);
+        let render_pipelines = Self::create_render_pipelines(&bind_group_layouts.render, &device, &config);
 
         surface.configure(&device, &config);
 
@@ -347,13 +373,10 @@ impl<'a> Renderer<'a> {
                 queue,
                 config,
                 render_stage: RenderStage::First,
-                storage_buffer,
-                bind_group_compute_1,
-                bind_group_compute_2,
-                bind_group_render_1,
-                bind_group_render_2,
-                compute_pipeline,
-                render_pipeline,
+                buffers,
+                bind_groups,
+                compute_pipelines,
+                render_pipelines,
                 window
             }
         )
@@ -371,17 +394,19 @@ impl<'a> Renderer<'a> {
     pub fn set_particles(&mut self, particles: Vec<ParticleData>) {
         let particles: &[u8] = bytemuck::cast_slice(particles.as_slice());
         
-        self.queue.write_buffer(&self.storage_buffer, 0, particles);
+        self.queue.write_buffer(&self.buffers.storage, 0, particles);
     }
 
     pub fn render(&mut self) -> anyhow::Result<()> {
         self.window.request_redraw();
 
+        let mut texture_is_suboptimal = false;
+
         let output = match self.surface.get_current_texture() {
             wgpu::CurrentSurfaceTexture::Success(surface_texture) => surface_texture,
 
             wgpu::CurrentSurfaceTexture::Suboptimal(surface_texture) => {
-                self.surface.configure(&self.device, &self.config);
+                texture_is_suboptimal = true;
                 surface_texture
             }
 
@@ -410,13 +435,13 @@ impl<'a> Renderer<'a> {
         });
 
         let compute_bind_group = if self.render_stage == RenderStage::First {
-            &self.bind_group_compute_1
+            &self.bind_groups.compute_1
         } else {
-            &self.bind_group_compute_2
+            &self.bind_groups.compute_2
         };
 
         compute_pass.set_bind_group(0, Some(compute_bind_group), &[]);
-        compute_pass.set_pipeline(&self.compute_pipeline);
+        compute_pass.set_pipeline(&self.compute_pipelines.main);
         compute_pass.dispatch_workgroups((NUMBER_OF_PARTICLES + 63) / 64, 1, 1);
 
         drop(compute_pass);
@@ -444,13 +469,13 @@ impl<'a> Renderer<'a> {
         });
 
         let render_bind_group = if self.render_stage == RenderStage::First {
-            &self.bind_group_render_2
+            &self.bind_groups.render_2
         } else {
-            &self.bind_group_render_1
+            &self.bind_groups.render_1
         };
 
         render_pass.set_bind_group(0, Some(render_bind_group), &[]);
-        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_pipeline(&self.render_pipelines.main);
         render_pass.draw(0..3, 0..1);
 
         drop(render_pass);
@@ -461,6 +486,10 @@ impl<'a> Renderer<'a> {
         match self.render_stage {
             RenderStage::First => {self.render_stage = RenderStage::Second},
             RenderStage::Second => {self.render_stage = RenderStage::First}
+        }
+
+        if texture_is_suboptimal {
+            self.surface.configure(&self.device, &self.config);
         }
 
         Ok(())
