@@ -20,12 +20,17 @@ pub struct Buffers {
 pub struct BindGroups {
     pub compute_1: BindGroup,
     pub compute_2: BindGroup,
+
+    pub fade_out_1: BindGroup,
+    pub fade_out_2: BindGroup,
+
     pub render_1: BindGroup,
     pub render_2: BindGroup,
 }
 
 pub struct BindGroupLayouts {
     pub compute: BindGroupLayout,
+    pub fade_out_compute: BindGroupLayout,
     pub render: BindGroupLayout,
 }
 
@@ -34,5 +39,6 @@ pub struct RenderPipelines {
 }
 
 pub struct ComputePipelines {
-    pub main: ComputePipeline
+    pub main: ComputePipeline,
+    pub fade_out: ComputePipeline
 }

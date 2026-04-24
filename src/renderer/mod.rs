@@ -60,9 +60,9 @@ impl<'a> Renderer<'a> {
 
     }
 
-    fn create_buffers(device: &Device) -> Buffers {
+    fn create_buffers(device: &Device, config: &SurfaceConfiguration) -> Buffers {
         let uniforms = Uniforms {
-            number_of_particles: NUMBER_OF_PARTICLES
+            data_1: [NUMBER_OF_PARTICLES, config.width, config.height, 0]
         };
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: None,
@@ -90,12 +90,9 @@ impl<'a> Renderer<'a> {
     ) -> (Buffers, BindGroupLayouts, BindGroups) {
 
         let textures = Self::create_textures(device, config);
-        let buffers = Self::create_buffers(device);
+        let buffers = Self::create_buffers(device, config);
         
         let sampler = device.create_sampler(&SamplerDescriptor::default());
-
-        let view_1 = textures.storage_1.create_view(&TextureViewDescriptor::default());
-        let view_2 = textures.storage_2.create_view(&TextureViewDescriptor::default());
 
         let bind_group_layout_compute = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: None,
@@ -132,6 +129,41 @@ impl<'a> Renderer<'a> {
                 }
             ]
         });
+        let bind_group_layout_fade_out_pipeline = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[
+                BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture { 
+                        access: wgpu::StorageTextureAccess::ReadOnly, 
+                        format: wgpu::TextureFormat::Rgba8Unorm, 
+                        view_dimension: wgpu::TextureViewDimension::D2
+                    },
+                    count: None
+                },
+                BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::StorageTexture { 
+                        access: wgpu::StorageTextureAccess::WriteOnly, 
+                        format: wgpu::TextureFormat::Rgba8Unorm, 
+                        view_dimension: wgpu::TextureViewDimension::D2
+                    },
+                    count: None
+                },
+                BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: ShaderStages::COMPUTE,
+                    ty: wgpu::BindingType::Buffer { 
+                        ty: wgpu::BufferBindingType::Uniform, 
+                        has_dynamic_offset: false, 
+                        min_binding_size: None
+                    },
+                    count: None
+                }
+            ]
+        });
         let bind_group_layout_render = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: None,
             entries: &[
@@ -157,8 +189,12 @@ impl<'a> Renderer<'a> {
 
         let bind_group_layouts = BindGroupLayouts {
             compute: bind_group_layout_compute,
+            fade_out_compute: bind_group_layout_fade_out_pipeline,
             render: bind_group_layout_render
         };
+
+        let view_1 = textures.storage_1.create_view(&TextureViewDescriptor::default());
+        let view_2 = textures.storage_2.create_view(&TextureViewDescriptor::default());
 
         let bind_group_compute_1 = device.create_bind_group(&BindGroupDescriptor {
             label: None,
@@ -197,6 +233,44 @@ impl<'a> Renderer<'a> {
             ]
         });
 
+        let bind_group_fade_out_1 = device.create_bind_group(&BindGroupDescriptor {
+            label: None,
+            layout: &bind_group_layouts.fade_out_compute,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view_1)
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view_2)
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: buffers.uniform.as_entire_binding()
+                },
+            ]
+        });
+        let bind_group_fade_out_2 = device.create_bind_group(&BindGroupDescriptor {
+            label: None,
+            layout: &bind_group_layouts.fade_out_compute,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&view_2)
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&view_1)
+                },
+                BindGroupEntry {
+                    binding: 2,
+                    resource: buffers.uniform.as_entire_binding()
+                },
+            ]
+        });
+
+
         let bind_group_render_1 = device.create_bind_group(&BindGroupDescriptor {
             label: None,
             layout: &bind_group_layouts.render,
@@ -229,6 +303,8 @@ impl<'a> Renderer<'a> {
         let bind_groups = BindGroups {
             compute_1: bind_group_compute_1,
             compute_2: bind_group_compute_2,
+            fade_out_1: bind_group_fade_out_1,
+            fade_out_2: bind_group_fade_out_2,
             render_1: bind_group_render_1,
             render_2: bind_group_render_2
         };
@@ -241,20 +317,35 @@ impl<'a> Renderer<'a> {
     }
 
     fn create_compute_pipelines(
-        bind_group_layout: &BindGroupLayout, 
+        bind_group_layouts: &BindGroupLayouts, 
         device: &Device
     ) -> ComputePipelines {
 
-        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        let main_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: None,
-            bind_group_layouts: &[Some(bind_group_layout)],
+            bind_group_layouts: &[Some(&bind_group_layouts.compute)],
+            immediate_size: 0
+        });
+        let fade_out_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: &[Some(&bind_group_layouts.fade_out_compute)],
             immediate_size: 0
         });
 
-        let module = device.create_shader_module(wgpu::include_wgsl!("../../shaders/compute.wgsl"));
-        let pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+        let module = device.create_shader_module(wgpu::include_wgsl!("../../shaders/compute/main.wgsl"));
+        let main_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
             label: None,
-            layout: Some(&pipeline_layout),
+            layout: Some(&main_pipeline_layout),
+            module: &module,
+            entry_point: Some("main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            cache: None
+        });
+
+        let module = device.create_shader_module(wgpu::include_wgsl!("../../shaders/compute/fade_out.wgsl"));
+        let fade_out_pipeline = device.create_compute_pipeline(&ComputePipelineDescriptor {
+            label: None,
+            layout: Some(&fade_out_pipeline_layout),
             module: &module,
             entry_point: Some("main"),
             compilation_options: PipelineCompilationOptions::default(),
@@ -262,7 +353,8 @@ impl<'a> Renderer<'a> {
         });
 
         ComputePipelines {
-            main: pipeline
+            main: main_pipeline,
+            fade_out: fade_out_pipeline
         }
     }
 
@@ -297,7 +389,7 @@ impl<'a> Renderer<'a> {
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState {
                     format: config.format,
-                    blend: None,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
                     write_mask: ColorWrites::all()
                 })]
             }),
@@ -361,7 +453,7 @@ impl<'a> Renderer<'a> {
             bind_groups
         ) = Self::create_bind_groups(&config, &device);
 
-        let compute_pipelines = Self::create_compute_pipelines(&bind_group_layouts.compute, &device);
+        let compute_pipelines = Self::create_compute_pipelines(&bind_group_layouts, &device);
         let render_pipelines = Self::create_render_pipelines(&bind_group_layouts.render, &device, &config);
 
         surface.configure(&device, &config);
@@ -434,6 +526,16 @@ impl<'a> Renderer<'a> {
             timestamp_writes: None
         });
 
+        let fade_out_bind_group = if self.render_stage == RenderStage::First {
+            &self.bind_groups.fade_out_2
+        } else {
+            &self.bind_groups.fade_out_1
+        };
+
+        compute_pass.set_bind_group(0, Some(fade_out_bind_group), &[]);
+        compute_pass.set_pipeline(&self.compute_pipelines.fade_out);
+        compute_pass.dispatch_workgroups((self.config.width + 7) / 8, (self.config.height + 7) / 8, 1);
+
         let compute_bind_group = if self.render_stage == RenderStage::First {
             &self.bind_groups.compute_1
         } else {
@@ -453,12 +555,7 @@ impl<'a> Renderer<'a> {
                 resolve_target: None,
                 depth_slice: None,
                 ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.1,
-                        g: 0.2,
-                        b: 0.3,
-                        a: 1.0,
-                    }),
+                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
                     store: wgpu::StoreOp::Store,
                 },
             })],

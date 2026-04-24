@@ -30,14 +30,12 @@ impl<'a> ApplicationHandler for Engine<'a> {
 
             let mut particles: Vec<ParticleData> = Vec::new();
 
-
-
-            for _ in 0..50 {
-                particles.push(ParticleData::new(ParticleType::RED));
+            for x in 0..500 {
+                particles.push(ParticleData::new(ParticleType::RED, 101.0 + x as f32 / 10000.0, 101.0));
             }
 
-            for _ in 0..50 {
-                particles.push(ParticleData::new(ParticleType::BLUE));
+            for _ in 0..1 {
+                particles.push(ParticleData::new(ParticleType::BLUE, 100.0, 100.0));
             }
 
             self.renderer.as_mut().unwrap().set_particles(particles);
