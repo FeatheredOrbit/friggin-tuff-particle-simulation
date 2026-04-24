@@ -50,10 +50,13 @@ fn behave(id: u32) {
             red(id, iter_id);
         }
 
-        // Check if the particle has gone out of bounds during behaviour, if so, bring it back.
-        particle_data[id].data_1.y = clamp(particle_data[id].data_1.y, 0.0, f32(uniforms.data_1.y));
-        particle_data[id].data_1.z = clamp(particle_data[id].data_1.z, 0.0, f32(uniforms.data_1.z));
-    }
+    }  
+
+    bound_check(id);
+
+    // Check if the particle has gone out of bounds during behaviour, if so, bring it back.
+    particle_data[id].data_1.y = clamp(particle_data[id].data_1.y, 0.0, f32(uniforms.data_1.y) - 1.0);
+    particle_data[id].data_1.z = clamp(particle_data[id].data_1.z, 0.0, f32(uniforms.data_1.z) - 1.0);  
 
 }
 
@@ -84,6 +87,73 @@ fn red(id: u32, iter_id: u32) {
     if u32(other_particle.data_1.x) == RED {
         let dx = other_particle.data_1.y - particle_data[id].data_1.y;
         let dy = other_particle.data_1.z - particle_data[id].data_1.z;
+
+        let length = sqrt(dx * dx + dy * dy);
+
+        if length != 0.0 {
+            let dir_x = dx / length;
+            let dir_y = dy / length;
+
+            particle_data[id].data_1.y -= dir_x * 0.01;
+            particle_data[id].data_1.z -= dir_y * 0.01;
+        }
+    }
+}
+
+// Particles should be pushed away from the walls of the screen.
+fn bound_check(id: u32) {
+    // Check for left wall.
+    {
+        let dx = 0.0 - particle_data[id].data_1.y;
+        let dy = 0.0;
+
+        let length = sqrt(dx * dx + dy * dy);
+
+        if length != 0.0 {
+            let dir_x = dx / length;
+            let dir_y = dy / length;
+
+            particle_data[id].data_1.y -= dir_x * 0.01;
+            particle_data[id].data_1.z -= dir_y * 0.01;
+        }
+    }
+
+    // Check for right wall.
+    {
+        let dx = f32(uniforms.data_1.y) - particle_data[id].data_1.y;
+        let dy = 0.0;
+
+        let length = sqrt(dx * dx + dy * dy);
+
+        if length != 0.0 {
+            let dir_x = dx / length;
+            let dir_y = dy / length;
+
+            particle_data[id].data_1.y -= dir_x * 0.01;
+            particle_data[id].data_1.z -= dir_y * 0.01;
+        }
+    }
+
+    // Check for ceiling.
+    {
+        let dx = 0.0;
+        let dy = 0.0 - particle_data[id].data_1.z;
+
+        let length = sqrt(dx * dx + dy * dy);
+
+        if length != 0.0 {
+            let dir_x = dx / length;
+            let dir_y = dy / length;
+
+            particle_data[id].data_1.y -= dir_x * 0.01;
+            particle_data[id].data_1.z -= dir_y * 0.01;
+        }
+    }
+
+    // Check for floor.
+    {
+        let dx = 0.0;
+        let dy = f32(uniforms.data_1.z) - particle_data[id].data_1.z;
 
         let length = sqrt(dx * dx + dy * dy);
 

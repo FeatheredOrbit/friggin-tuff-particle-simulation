@@ -30,7 +30,7 @@ impl<'a> ApplicationHandler for Engine<'a> {
 
             let mut particles: Vec<ParticleData> = Vec::new();
 
-            for x in 0..500 {
+            for x in 0..5 {
                 particles.push(ParticleData::new(ParticleType::RED, 101.0 + x as f32 / 10000.0, 101.0));
             }
 
