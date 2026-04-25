@@ -42,12 +42,17 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
 
 fn behave(id: u32) {
 
+    // For now check every particle for every particle, in the near future I will do spatial partitioning to save on iterations.
     for (var iter_id = 0u; iter_id < uniforms.data_1.x; iter_id++) {
 
         if (iter_id == id) { continue; }
 
         if u32(particle_data[id].data_1.x) == RED {
             red(id, iter_id);
+        }
+
+        if u32(particle_data[id].data_1.x) == BLUE {
+            blue(id, iter_id);
         }
 
     }  
@@ -65,6 +70,8 @@ fn behave(id: u32) {
 // Red runs away from blue.
 // Red runs away from red.
 fn red(id: u32, iter_id: u32) {
+    let epsilon = 0.1;
+
     let other_particle = particle_data[iter_id];
 
     // Move away from blue.
@@ -75,8 +82,8 @@ fn red(id: u32, iter_id: u32) {
         let length = sqrt(dx * dx + dy * dy);
 
         if length != 0.0 {
-            let dir_x = dx / length;
-            let dir_y = dy / length;
+            let dir_x = dx / (pow(length, 2.0) + epsilon) * 5;
+            let dir_y = dy / (pow(length, 2.0) + epsilon) * 5;
 
             particle_data[id].data_1.y -= dir_x * 0.01;
             particle_data[id].data_1.z -= dir_y * 0.01;
@@ -91,11 +98,53 @@ fn red(id: u32, iter_id: u32) {
         let length = sqrt(dx * dx + dy * dy);
 
         if length != 0.0 {
-            let dir_x = dx / length;
-            let dir_y = dy / length;
+            let dir_x = dx / pow(length, 2.0) * 5;
+            let dir_y = dy / pow(length, 2.0) * 5;
 
             particle_data[id].data_1.y -= dir_x * 0.01;
             particle_data[id].data_1.z -= dir_y * 0.01;
+        }
+    }
+}
+
+// Called if particle under id is blue.
+
+// Blue is attracted to red.
+// Blue is attracted to blue.
+fn blue(id: u32, iter_id: u32) {
+    let epsilon = 0.1;
+
+    let other_particle = particle_data[iter_id]; 
+
+    // Move towards red.
+    if u32(other_particle.data_1.x) == RED {
+        let dx = other_particle.data_1.y - particle_data[id].data_1.y;
+        let dy = other_particle.data_1.z - particle_data[id].data_1.z;
+
+        let length = sqrt(dx * dx + dy * dy);
+
+        if length != 0.0 {
+            let dir_x = dx / (pow(length, 2.0) + epsilon) * 5;
+            let dir_y = dy / (pow(length, 2.0) + epsilon) * 5;
+
+            particle_data[id].data_1.y += dir_x * 0.01;
+            particle_data[id].data_1.z += dir_y * 0.01;
+        }
+    }
+
+    // Move towards blue.
+    if u32(other_particle.data_1.x) == BLUE {
+        let dx = other_particle.data_1.y - particle_data[id].data_1.y;
+        let dy = other_particle.data_1.z - particle_data[id].data_1.z;
+
+        let length = sqrt(dx * dx + dy * dy);
+
+        if length != 0.0 {
+            let dir_x = dx / (pow(length, 2.0) + epsilon) * 5;
+            let dir_y = dy / (pow(length, 2.0) + epsilon) * 5;
+
+            particle_data[id].data_1.y += dir_x * 0.01;
+            particle_data[id].data_1.z += dir_y * 0.01;
         }
     }
 }
@@ -110,11 +159,11 @@ fn bound_check(id: u32) {
         let length = sqrt(dx * dx + dy * dy);
 
         if length != 0.0 {
-            let dir_x = dx / length;
-            let dir_y = dy / length;
+            let dir_x = dx / pow(length, 2.0) * 2;
+            let dir_y = dy / pow(length, 2.0) * 2;
 
-            particle_data[id].data_1.y -= dir_x * 0.01;
-            particle_data[id].data_1.z -= dir_y * 0.01;
+            particle_data[id].data_1.y -= dir_x * 0.2;
+            particle_data[id].data_1.z -= dir_y * 0.2;
         }
     }
 
@@ -126,11 +175,11 @@ fn bound_check(id: u32) {
         let length = sqrt(dx * dx + dy * dy);
 
         if length != 0.0 {
-            let dir_x = dx / length;
-            let dir_y = dy / length;
+            let dir_x = dx / pow(length, 2.0) * 2;
+            let dir_y = dy / pow(length, 2.0) * 2;
 
-            particle_data[id].data_1.y -= dir_x * 0.01;
-            particle_data[id].data_1.z -= dir_y * 0.01;
+            particle_data[id].data_1.y -= dir_x * 0.2;
+            particle_data[id].data_1.z -= dir_y * 0.2;
         }
     }
 
@@ -142,11 +191,11 @@ fn bound_check(id: u32) {
         let length = sqrt(dx * dx + dy * dy);
 
         if length != 0.0 {
-            let dir_x = dx / length;
-            let dir_y = dy / length;
+            let dir_x = dx / pow(length, 2.0) * 2;
+            let dir_y = dy / pow(length, 2.0) * 2;
 
-            particle_data[id].data_1.y -= dir_x * 0.01;
-            particle_data[id].data_1.z -= dir_y * 0.01;
+            particle_data[id].data_1.y -= dir_x * 0.2;
+            particle_data[id].data_1.z -= dir_y * 0.2;
         }
     }
 
@@ -158,11 +207,11 @@ fn bound_check(id: u32) {
         let length = sqrt(dx * dx + dy * dy);
 
         if length != 0.0 {
-            let dir_x = dx / length;
-            let dir_y = dy / length;
+            let dir_x = dx / pow(length, 2.0) * 2;
+            let dir_y = dy / pow(length, 2.0) * 2;
 
-            particle_data[id].data_1.y -= dir_x * 0.01;
-            particle_data[id].data_1.z -= dir_y * 0.01;
+            particle_data[id].data_1.y -= dir_x * 0.2;
+            particle_data[id].data_1.z -= dir_y * 0.2;
         }
     }
 }

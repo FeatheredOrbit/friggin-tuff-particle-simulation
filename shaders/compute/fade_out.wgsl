@@ -24,6 +24,7 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
 
     var color = textureLoad(texture_read, vec2<u32>(id_x, id_y));
 
+    // Fade out alpha.
     if color.w <= 0.04 {
         color.w = 0.0;
     }
