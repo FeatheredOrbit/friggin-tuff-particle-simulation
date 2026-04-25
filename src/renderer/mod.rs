@@ -1,18 +1,84 @@
 use std::sync::Arc;
 
-use wgpu::{BackendOptions, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferUsages, ColorTargetState, ColorWrites, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, FragmentState, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, MultisampleState, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipelineDescriptor, RequestAdapterOptions, SamplerDescriptor, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureViewDescriptor, VertexState, util::{BufferInitDescriptor, DeviceExt}, wgt::BufferDescriptor};
-use winit::window::Window;
+use egui::{Context, CornerRadius, Visuals};
+use egui_wgpu::{RendererOptions, ScreenDescriptor};
+use egui_winit::State;
+use wgpu::{BackendOptions, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferUsages, Color, ColorTargetState, ColorWrites, CommandEncoder, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, FragmentState, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, MultisampleState, Operations, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipelineDescriptor, RequestAdapterOptions, SamplerDescriptor, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureView, TextureViewDescriptor, VertexState, util::{BufferInitDescriptor, DeviceExt}, wgt::BufferDescriptor};
+use winit::{event::WindowEvent, window::Window};
 
-use crate::{constants::{MAX_PARTICLES, NUMBER_OF_PARTICLES}, renderer::{misc::{BindGroupLayouts, BindGroups, Buffers, ComputePipelines, RenderPipelines, RenderStage, Textures}, shader_data::{ParticleData, Uniforms}}};
+use crate::{constants::{MAX_PARTICLES, NUMBER_OF_PARTICLES}, renderer::{misc::{BindGroupLayouts, BindGroups, Buffers, ComputePipelines, RenderPipelines, RenderStage, Textures}, shader_data::{ParticleData, Uniforms}, ui::render_ui}};
 
 pub mod shader_data;
 mod misc;
+mod ui;
+
+struct EguiRenderer {
+    renderer: egui_wgpu::Renderer,
+    state: State,
+    context: Context
+}
+impl EguiRenderer {
+    fn render(
+        &mut self, 
+        device: &Device, 
+        queue: &Queue, 
+        surface_view: &TextureView, 
+        encoder: &mut CommandEncoder, 
+        window: Arc<Window>,
+        render_stage: &RenderStage
+    ) {
+        let screen_descriptor = ScreenDescriptor {
+            size_in_pixels: [window.inner_size().width, window.inner_size().height],
+            pixels_per_point: window.scale_factor() as f32
+        };
+
+        let raw_input = self.state.take_egui_input(&window);
+        let full_output = self.context.run_ui(raw_input, |ui| {
+            render_ui(ui, &screen_descriptor, render_stage);
+        });
+
+        self.state.handle_platform_output(&window, full_output.platform_output);
+
+        let tris = self.context.tessellate(full_output.shapes, full_output.pixels_per_point);
+        for (id, image_delta) in &full_output.textures_delta.set {
+            self.renderer.update_texture(device, queue, *id, image_delta);
+        }
+
+        self.renderer.update_buffers(device, queue, encoder, &tris, &screen_descriptor);
+
+        let render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor { 
+            label: None, 
+            color_attachments: &[
+                Some(wgpu::RenderPassColorAttachment { 
+                    view: surface_view, 
+                    depth_slice: None, 
+                    resolve_target: None, 
+                    ops: Operations {
+                        load: wgpu::LoadOp::Clear(Color::BLACK),
+                        store: wgpu::StoreOp::Store
+                    }
+                })
+            ], 
+            depth_stencil_attachment: None, 
+            timestamp_writes: None, 
+            occlusion_query_set: None, 
+            multiview_mask: None 
+        });
+
+        self.renderer.render(&mut render_pass.forget_lifetime(), &tris, &screen_descriptor);
+
+        for texture_id in full_output.textures_delta.free {
+            self.renderer.free_texture(&texture_id);
+        }
+    }
+}
 
 pub struct Renderer<'a> {
     surface: Surface<'a>,
     device: Device,
     queue: Queue,
     config: SurfaceConfiguration,
+    egui_renderer: EguiRenderer,
     render_stage: RenderStage,
     buffers: Buffers,
     bind_groups: BindGroups,
@@ -447,6 +513,22 @@ impl<'a> Renderer<'a> {
             desired_maximum_frame_latency: 2,
         };
 
+        let renderer_egui = egui_wgpu::Renderer::new(&device, config.format, RendererOptions::default());
+
+        let mut visuals = Visuals::dark();
+        visuals.window_corner_radius = CornerRadius::ZERO;
+
+        let context = Context::default();
+        context.set_visuals(visuals);
+
+        let state = State::new(context.clone(), context.viewport_id(), &window, None, None, None);
+
+        let egui_renderer = EguiRenderer {
+            renderer: renderer_egui,
+            state,
+            context
+        };
+
         let ( 
             buffers,
             bind_group_layouts,
@@ -464,6 +546,7 @@ impl<'a> Renderer<'a> {
                 device,
                 queue,
                 config,
+                egui_renderer,
                 render_stage: RenderStage::First,
                 buffers,
                 bind_groups,
@@ -489,7 +572,11 @@ impl<'a> Renderer<'a> {
         self.queue.write_buffer(&self.buffers.storage, 0, particles);
     }
 
-    pub fn render(&mut self) -> anyhow::Result<()> {
+    pub fn take_winit_event(&mut self, window: Arc<Window>, window_event: WindowEvent) {
+        let _ = self.egui_renderer.state.on_window_event(&window, &window_event);
+    }
+
+    pub fn render(&mut self, window: Arc<Window>) -> anyhow::Result<()> {
         self.window.request_redraw();
 
         let mut texture_is_suboptimal = false;
@@ -576,6 +663,8 @@ impl<'a> Renderer<'a> {
         render_pass.draw(0..3, 0..1);
 
         drop(render_pass);
+
+        self.egui_renderer.render(&self.device, &self.queue, &view, &mut encoder, window, &self.render_stage);
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();

@@ -62,9 +62,11 @@ impl<'a> ApplicationHandler for Engine<'a> {
             }
 
             winit::event::WindowEvent::RedrawRequested => {
-                if let Some(renderer) = self.renderer.as_mut() {
-                    match renderer.render() {
+                if let (Some(window), Some(renderer)) = (self.window.as_ref(), self.renderer.as_mut()) {
+                    match renderer.render(window.clone()) {
+
                         Ok(()) => {},
+
                         Err(e) => {
                             eprintln!("{}", e);
                             event_loop.exit();
@@ -74,6 +76,10 @@ impl<'a> ApplicationHandler for Engine<'a> {
             }
 
             _ => {}
+        }
+
+        if let (Some(window), Some(renderer)) = (self.window.as_ref(), self.renderer.as_mut()) {
+            renderer.take_winit_event(window.clone(), event);
         }
     }
 }
