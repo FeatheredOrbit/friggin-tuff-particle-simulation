@@ -1,21 +1,27 @@
 use std::sync::Arc;
 
-use egui::{Context, CornerRadius, Visuals};
+use egui::{Context, CornerRadius, TextureId, Visuals};
 use egui_wgpu::{RendererOptions, ScreenDescriptor};
 use egui_winit::State;
-use wgpu::{BackendOptions, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayout, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferUsages, Color, ColorTargetState, ColorWrites, CommandEncoder, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, FragmentState, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, MultisampleState, Operations, PipelineCompilationOptions, PipelineLayoutDescriptor, PrimitiveState, Queue, RenderPipelineDescriptor, RequestAdapterOptions, SamplerDescriptor, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureView, TextureViewDescriptor, VertexState, util::{BufferInitDescriptor, DeviceExt}, wgt::BufferDescriptor};
+use wgpu::{BackendOptions, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferUsages, Color, CommandEncoder, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, Operations, PipelineCompilationOptions, PipelineLayoutDescriptor, Queue, RequestAdapterOptions, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureView, TextureViewDescriptor, util::{BufferInitDescriptor, DeviceExt}, wgt::BufferDescriptor, FilterMode};
 use winit::{event::WindowEvent, window::Window};
 
-use crate::{constants::{MAX_PARTICLES, NUMBER_OF_PARTICLES}, renderer::{misc::{BindGroupLayouts, BindGroups, Buffers, ComputePipelines, RenderPipelines, RenderStage, Textures}, shader_data::{ParticleData, Uniforms}, ui::render_ui}};
+use crate::{constants::{MAX_PARTICLES, NUMBER_OF_PARTICLES}, renderer::{misc::{BindGroupLayouts, BindGroups, Buffers, ComputePipelines, RenderStage, Textures}, shader_data::{ParticleData, Uniforms}, ui::render_ui}};
 
 pub mod shader_data;
 mod misc;
 mod ui;
 
+pub struct TextureIds {
+    texture_1: TextureId,
+    texture_2: TextureId,
+}
+
 struct EguiRenderer {
     renderer: egui_wgpu::Renderer,
     state: State,
-    context: Context
+    context: Context,
+    texture_ids: TextureIds
 }
 impl EguiRenderer {
     fn render(
@@ -34,7 +40,7 @@ impl EguiRenderer {
 
         let raw_input = self.state.take_egui_input(&window);
         let full_output = self.context.run_ui(raw_input, |ui| {
-            render_ui(ui, &screen_descriptor, render_stage);
+            render_ui(ui, &screen_descriptor, render_stage, &self.texture_ids);
         });
 
         self.state.handle_platform_output(&window, full_output.platform_output);
@@ -82,13 +88,16 @@ pub struct Renderer<'a> {
     render_stage: RenderStage,
     buffers: Buffers,
     bind_groups: BindGroups,
-    render_pipelines: RenderPipelines,
     compute_pipelines: ComputePipelines,
     window: Arc<Window>
 }
 
 impl<'a> Renderer<'a> {
-    fn create_textures(device: &Device, config: &SurfaceConfiguration) -> Textures {
+    fn create_textures(
+        device: &Device,
+        config: &SurfaceConfiguration,
+        egui_renderer: &mut egui_wgpu::Renderer,
+    ) -> (Textures, TextureIds) {
         let storage_texture_1 = device.create_texture(&TextureDescriptor {
             label: None,
             size: Extent3d {
@@ -103,6 +112,7 @@ impl<'a> Renderer<'a> {
             usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
             view_formats: &[]
         });
+        let storage_texture_view_1 = storage_texture_1.create_view(&Default::default());
 
         let storage_texture_2 = device.create_texture(&TextureDescriptor {
             label: None,
@@ -118,11 +128,23 @@ impl<'a> Renderer<'a> {
             usage: TextureUsages::STORAGE_BINDING | TextureUsages::TEXTURE_BINDING,
             view_formats: &[]
         });
+        let storage_texture_view_2 = storage_texture_2.create_view(&Default::default());
 
-        Textures { 
-            storage_1: storage_texture_1, 
-            storage_2: storage_texture_2
-        }
+        let texture1_id = egui_renderer.register_native_texture(device, &storage_texture_view_1, FilterMode::Linear);
+        let texture2_id = egui_renderer.register_native_texture(device, &storage_texture_view_2, FilterMode::Linear);
+
+        let texture_ids = TextureIds {
+          texture_1: texture1_id,
+            texture_2: texture2_id
+        };
+
+        (
+            Textures {
+                storage_1: storage_texture_1,
+                storage_2: storage_texture_2
+            },
+            texture_ids
+        )
 
     }
 
@@ -152,13 +174,15 @@ impl<'a> Renderer<'a> {
 
     fn create_bind_groups(
         config: &wgpu::wgt::SurfaceConfiguration<Vec<wgpu::TextureFormat>>,
-        device: &Device
-    ) -> (Buffers, BindGroupLayouts, BindGroups) {
+        device: &Device,
+        egui_renderer: &mut egui_wgpu::Renderer
+    ) -> (TextureIds, Buffers, BindGroupLayouts, BindGroups) {
 
-        let textures = Self::create_textures(device, config);
+        let (
+            textures,
+            texture_ids
+        ) = Self::create_textures(device, config, egui_renderer);
         let buffers = Self::create_buffers(device, config);
-        
-        let sampler = device.create_sampler(&SamplerDescriptor::default());
 
         let bind_group_layout_compute = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: None,
@@ -230,33 +254,10 @@ impl<'a> Renderer<'a> {
                 }
             ]
         });
-        let bind_group_layout_render = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-            label: None,
-            entries: &[
-                BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Texture { 
-                        sample_type: wgpu::TextureSampleType::Float { filterable: true }, 
-                        view_dimension: wgpu::TextureViewDimension::D2, 
-                        multisampled: false
-                    },
-                    count: None
-                },
-
-                BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                    count: None
-                }
-            ]
-        });
 
         let bind_group_layouts = BindGroupLayouts {
             compute: bind_group_layout_compute,
-            fade_out_compute: bind_group_layout_fade_out_pipeline,
-            render: bind_group_layout_render
+            fade_out_compute: bind_group_layout_fade_out_pipeline
         };
 
         let view_1 = textures.storage_1.create_view(&TextureViewDescriptor::default());
@@ -336,50 +337,19 @@ impl<'a> Renderer<'a> {
             ]
         });
 
-
-        let bind_group_render_1 = device.create_bind_group(&BindGroupDescriptor {
-            label: None,
-            layout: &bind_group_layouts.render,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view_1)
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler)
-                }
-            ]
-        });
-        let bind_group_render_2 = device.create_bind_group(&BindGroupDescriptor {
-            label: None,
-            layout: &bind_group_layouts.render,
-            entries: &[
-                BindGroupEntry {
-                    binding: 0,
-                    resource: wgpu::BindingResource::TextureView(&view_2)
-                },
-                BindGroupEntry {
-                    binding: 1,
-                    resource: wgpu::BindingResource::Sampler(&sampler)
-                }
-            ]
-        });
-
         let bind_groups = BindGroups {
             compute_1: bind_group_compute_1,
             compute_2: bind_group_compute_2,
             fade_out_1: bind_group_fade_out_1,
-            fade_out_2: bind_group_fade_out_2,
-            render_1: bind_group_render_1,
-            render_2: bind_group_render_2
+            fade_out_2: bind_group_fade_out_2
         };
 
-        return (
+        (
+            texture_ids,
             buffers,
             bind_group_layouts,
             bind_groups
-        );
+        )
     }
 
     fn create_compute_pipelines(
@@ -424,50 +394,6 @@ impl<'a> Renderer<'a> {
         }
     }
 
-    fn create_render_pipelines(
-        bind_group_layout: &BindGroupLayout, 
-        device: &Device,
-        config: &wgpu::wgt::SurfaceConfiguration<Vec<wgpu::TextureFormat>>
-    ) -> RenderPipelines {
-
-        let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-            label: None,
-            bind_group_layouts: &[Some(bind_group_layout)],
-            immediate_size: 0
-        });
-
-        let module = device.create_shader_module(wgpu::include_wgsl!("../../shaders/render.wgsl"));
-        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: None,
-            layout: Some(&pipeline_layout),
-            vertex: VertexState {
-                module: &module,
-                entry_point: Some("vs_main"),
-                compilation_options: PipelineCompilationOptions::default(),
-                buffers: &[]
-            },
-            primitive: PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: MultisampleState::default(),
-            fragment: Some(FragmentState {
-                module: &module,
-                entry_point: Some("fs_main"),
-                compilation_options: PipelineCompilationOptions::default(),
-                targets: &[Some(ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: ColorWrites::all()
-                })]
-            }),
-            multiview_mask: None,
-            cache: None
-        });
-
-        RenderPipelines {
-            main: pipeline
-        }
-    }
-
     pub async fn new(window: Arc<Window>) -> anyhow::Result<Self> {
         let size = window.inner_size();
 
@@ -479,13 +405,13 @@ impl<'a> Renderer<'a> {
             display: None
         });
 
-        let surface = instance.create_surface(window.clone()).unwrap();
+        let surface = instance.create_surface(window.clone())?;
 
         let adapter = instance.request_adapter(&RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::None,
             force_fallback_adapter: false,
             compatible_surface: Some(&surface)
-        }).await.unwrap();
+        }).await?;
 
         let (device, queue) = adapter.request_device(&DeviceDescriptor {
             label: None,
@@ -494,7 +420,7 @@ impl<'a> Renderer<'a> {
             experimental_features: ExperimentalFeatures::disabled(),
             memory_hints: MemoryHints::default(),
             trace: wgpu::Trace::Off
-        }).await.unwrap();
+        }).await?;
 
         let surface_caps = surface.get_capabilities(&adapter);
         let surface_format = surface_caps.formats.iter()
@@ -502,8 +428,8 @@ impl<'a> Renderer<'a> {
             .copied()
             .unwrap_or(surface_caps.formats[0]);
 
-        let config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        let config = SurfaceConfiguration {
+            usage: TextureUsages::RENDER_ATTACHMENT,
             format: surface_format,
             width: size.width,
             height: size.height,
@@ -513,7 +439,7 @@ impl<'a> Renderer<'a> {
             desired_maximum_frame_latency: 2,
         };
 
-        let renderer_egui = egui_wgpu::Renderer::new(&device, config.format, RendererOptions::default());
+        let mut renderer_egui = egui_wgpu::Renderer::new(&device, config.format, RendererOptions::default());
 
         let mut visuals = Visuals::dark();
         visuals.window_corner_radius = CornerRadius::ZERO;
@@ -523,22 +449,23 @@ impl<'a> Renderer<'a> {
 
         let state = State::new(context.clone(), context.viewport_id(), &window, None, None, None);
 
-        let egui_renderer = EguiRenderer {
-            renderer: renderer_egui,
-            state,
-            context
-        };
-
-        let ( 
+        let (
+            texture_ids,
             buffers,
             bind_group_layouts,
             bind_groups
-        ) = Self::create_bind_groups(&config, &device);
+        ) = Self::create_bind_groups(&config, &device, &mut renderer_egui);
 
         let compute_pipelines = Self::create_compute_pipelines(&bind_group_layouts, &device);
-        let render_pipelines = Self::create_render_pipelines(&bind_group_layouts.render, &device, &config);
 
         surface.configure(&device, &config);
+
+        let egui_renderer = EguiRenderer {
+            renderer: renderer_egui,
+            state,
+            context,
+            texture_ids
+        };
 
         Ok(
             Self {
@@ -551,7 +478,6 @@ impl<'a> Renderer<'a> {
                 buffers,
                 bind_groups,
                 compute_pipelines,
-                render_pipelines,
                 window
             }
         )
@@ -602,7 +528,7 @@ impl<'a> Renderer<'a> {
             }
         };
 
-        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output.texture.create_view(&TextureViewDescriptor::default());
 
         let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder")
@@ -634,35 +560,6 @@ impl<'a> Renderer<'a> {
         compute_pass.dispatch_workgroups((NUMBER_OF_PARTICLES + 63) / 64, 1, 1);
 
         drop(compute_pass);
-
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Render Pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-                depth_slice: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            occlusion_query_set: None,
-            timestamp_writes: None,
-            multiview_mask: None,
-        });
-
-        let render_bind_group = if self.render_stage == RenderStage::First {
-            &self.bind_groups.render_2
-        } else {
-            &self.bind_groups.render_1
-        };
-
-        render_pass.set_bind_group(0, Some(render_bind_group), &[]);
-        render_pass.set_pipeline(&self.render_pipelines.main);
-        render_pass.draw(0..3, 0..1);
-
-        drop(render_pass);
 
         self.egui_renderer.render(&self.device, &self.queue, &view, &mut encoder, window, &self.render_stage);
 

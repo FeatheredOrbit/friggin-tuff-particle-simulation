@@ -1,6 +1,6 @@
-use wgpu::{BindGroup, BindGroupLayout, Buffer, ComputePipeline, RenderPipeline, Texture};
+use wgpu::{BindGroup, BindGroupLayout, Buffer, ComputePipeline, Texture};
 
-/// Decides which set of bindgroups needs to be set for which pipeline.
+/// Decides which set of bind groups needs to be set for which pipeline.
 #[derive(PartialEq, Eq)]
 pub enum RenderStage {
     First,
@@ -22,20 +22,12 @@ pub struct BindGroups {
     pub compute_2: BindGroup,
 
     pub fade_out_1: BindGroup,
-    pub fade_out_2: BindGroup,
-
-    pub render_1: BindGroup,
-    pub render_2: BindGroup,
+    pub fade_out_2: BindGroup
 }
 
 pub struct BindGroupLayouts {
     pub compute: BindGroupLayout,
-    pub fade_out_compute: BindGroupLayout,
-    pub render: BindGroupLayout,
-}
-
-pub struct RenderPipelines {
-    pub main: RenderPipeline
+    pub fade_out_compute: BindGroupLayout
 }
 
 pub struct ComputePipelines {

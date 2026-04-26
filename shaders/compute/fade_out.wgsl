@@ -25,12 +25,14 @@ fn main(@builtin(global_invocation_id) global_invocation_id: vec3<u32>) {
     var color = textureLoad(texture_read, vec2<u32>(id_x, id_y));
 
     // Fade out alpha.
-    if color.w <= 0.04 {
-        color.w = 0.0;
+    if color.a <= 0.04 {
+        color.a = 0.0;
     }
     else {
-        color.w *= 0.95;
+        color.a *= 0.95;
     }
 
-    textureStore(texture_write, vec2<u32>(id_x, id_y), color);
+    let final_color = vec4<f32>(color.rgb * color.a, color.a);
+
+    textureStore(texture_write, vec2<u32>(id_x, id_y), final_color);
 }
