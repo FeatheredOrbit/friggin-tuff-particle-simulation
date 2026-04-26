@@ -13,14 +13,6 @@ pub fn render_ui(
     let screen_width = screen_descriptor.size_in_pixels[0] as f32;
     let screen_height = screen_descriptor.size_in_pixels[1] as f32;
 
-    Window::new("Tuff ahh menu")
-    .fixed_pos(Pos2::ZERO)
-    .show(ui.ctx(), |ui| {
-
-
-
-    });
-
     Area::new("Texture Area".into())
     .fixed_pos(Pos2::ZERO)
     .show(ui.ctx(), |ui| {
@@ -33,6 +25,13 @@ pub fn render_ui(
                 )
             )
         );
+
+    });
+
+    Window::new("Tuff ahh menu")
+    .fixed_pos(Pos2::ZERO)
+    .show(ui.ctx(), |_ui| {
+
 
     });
 

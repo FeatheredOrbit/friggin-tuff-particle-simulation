@@ -130,8 +130,8 @@ impl<'a> Renderer<'a> {
         });
         let storage_texture_view_2 = storage_texture_2.create_view(&Default::default());
 
-        let texture1_id = egui_renderer.register_native_texture(device, &storage_texture_view_1, FilterMode::Linear);
-        let texture2_id = egui_renderer.register_native_texture(device, &storage_texture_view_2, FilterMode::Linear);
+        let texture1_id = egui_renderer.register_native_texture(device, &storage_texture_view_1, FilterMode::Nearest);
+        let texture2_id = egui_renderer.register_native_texture(device, &storage_texture_view_2, FilterMode::Nearest);
 
         let texture_ids = TextureIds {
           texture_1: texture1_id,
