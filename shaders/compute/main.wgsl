@@ -1,7 +1,7 @@
 struct Uniforms {
     // X is number of particles.
-    // Y is screen width.
-    // Z is screen height.
+    // Y is texture width.
+    // Z is texture height.
     data_1: vec4<u32>
 }
 
@@ -60,8 +60,8 @@ fn behave(id: u32) {
     bound_check(id);
 
     // Check if the particle has gone out of bounds during behaviour, if so, bring it back.
-    particle_data[id].data_1.y = clamp(particle_data[id].data_1.y, 0.0, f32(uniforms.data_1.y) - 1.0);
-    particle_data[id].data_1.z = clamp(particle_data[id].data_1.z, 0.0, f32(uniforms.data_1.z) - 1.0);  
+    particle_data[id].data_1.y = clamp(particle_data[id].data_1.y, 0.0, f32(uniforms.data_1.y) / 2.0);
+    particle_data[id].data_1.z = clamp(particle_data[id].data_1.z, 0.0, f32(uniforms.data_1.z) / 2.0);
 
 }
 

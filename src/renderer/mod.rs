@@ -101,8 +101,8 @@ impl<'a> Renderer<'a> {
         let storage_texture_1 = device.create_texture(&TextureDescriptor {
             label: None,
             size: Extent3d {
-                width: config.width,
-                height: config.height,
+                width: config.width / 4,
+                height: config.height / 4,
                 depth_or_array_layers: 1
             },
             mip_level_count: 1,
@@ -117,8 +117,8 @@ impl<'a> Renderer<'a> {
         let storage_texture_2 = device.create_texture(&TextureDescriptor {
             label: None,
             size: Extent3d {
-                width: config.width,
-                height: config.height,
+                width: config.width / 4,
+                height: config.height / 4,
                 depth_or_array_layers: 1
             },
             mip_level_count: 1,
@@ -150,7 +150,7 @@ impl<'a> Renderer<'a> {
 
     fn create_buffers(device: &Device, config: &SurfaceConfiguration) -> Buffers {
         let uniforms = Uniforms {
-            data_1: [NUMBER_OF_PARTICLES, config.width, config.height, 0]
+            data_1: [NUMBER_OF_PARTICLES, config.width / 4, config.height / 4, 0]
         };
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: None,
