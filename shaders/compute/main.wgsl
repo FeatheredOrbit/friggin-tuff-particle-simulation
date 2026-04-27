@@ -175,7 +175,7 @@ fn bound_check(id: u32, scale_factor: f32) {
 
     // Check for right wall.
     {
-        let dx = (f32(uniforms.data_1.y) * (1.0 / scale_factor) - 1.0) - particle_data[id].data_1.y;
+        let dx = (f32(uniforms.data_1.y) * (1.0 / scale_factor)) - particle_data[id].data_1.y;
         let dy = 0.0;
 
         let length = sqrt(dx * dx + dy * dy);
@@ -208,7 +208,7 @@ fn bound_check(id: u32, scale_factor: f32) {
     // Check for floor.
     {
         let dx = 0.0;
-        let dy = (f32(uniforms.data_1.z) * (1.0 / scale_factor) - 1.0) - particle_data[id].data_1.z;
+        let dy = (f32(uniforms.data_1.z) * (1.0 / scale_factor)) - particle_data[id].data_1.z;
 
         let length = sqrt(dx * dx + dy * dy);
 
