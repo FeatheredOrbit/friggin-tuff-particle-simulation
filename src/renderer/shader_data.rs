@@ -27,7 +27,7 @@ impl ParticleData {
     pub fn new(particle_type: ParticleType, x_pos: f32, y_pos: f32) -> Self {
 
         Self {
-            // Yeah ugly ash.
+            // Yeah, ugly ash.
             data_1: [particle_type as u32 as f32, x_pos, y_pos, 0.0]
         }
     }
