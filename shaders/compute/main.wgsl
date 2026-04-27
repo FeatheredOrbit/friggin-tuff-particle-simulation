@@ -2,6 +2,7 @@ struct Uniforms {
     // X is number of particles.
     // Y is texture width.
     // Z is texture height.
+    // W is window scale factor, needs to be reinterpreted as float though.
     data_1: vec4<u32>
 }
 
@@ -57,11 +58,16 @@ fn behave(id: u32) {
 
     }
 
-    bound_check(id);
+    // Idk why but unless I bring in the scale factor of the screen the clamping doesn't really work, not the bound
+    // checking, I geniunely can't figure out what's wrong on the Rust side so until I figure it out I just use the
+    // scale factor directrly in the shader.
+    let scale_factor = bitcast<f32>(uniforms.data_1.w);
+
+    bound_check(id, scale_factor);
 
     // Check if the particle has gone out of bounds during behaviour, if so, bring it back.
-    particle_data[id].data_1.y = clamp(particle_data[id].data_1.y, 0.0, f32(uniforms.data_1.y) * 0.8 - 1);
-    particle_data[id].data_1.z = clamp(particle_data[id].data_1.z, 0.0, f32(uniforms.data_1.z) * 0.8 - 1);
+    particle_data[id].data_1.y = clamp(particle_data[id].data_1.y, 0.0, f32(uniforms.data_1.y) * (1.0 / scale_factor) - 1.0);
+    particle_data[id].data_1.z = clamp(particle_data[id].data_1.z, 0.0, f32(uniforms.data_1.z) * (1.0 / scale_factor) - 1.0);
 
 }
 
@@ -150,7 +156,7 @@ fn blue(id: u32, iter_id: u32) {
 }
 
 // Particles should be pushed away from the walls of the screen.
-fn bound_check(id: u32) {
+fn bound_check(id: u32, scale_factor: f32) {
     // Check for left wall.
     {
         let dx = 0.0 - particle_data[id].data_1.y;
@@ -169,7 +175,7 @@ fn bound_check(id: u32) {
 
     // Check for right wall.
     {
-        let dx = f32(uniforms.data_1.y) - particle_data[id].data_1.y;
+        let dx = (f32(uniforms.data_1.y) * (1.0 / scale_factor) - 1.0) - particle_data[id].data_1.y;
         let dy = 0.0;
 
         let length = sqrt(dx * dx + dy * dy);
@@ -202,7 +208,7 @@ fn bound_check(id: u32) {
     // Check for floor.
     {
         let dx = 0.0;
-        let dy = f32(uniforms.data_1.z) - particle_data[id].data_1.z;
+        let dy = (f32(uniforms.data_1.z) * (1.0 / scale_factor) - 1.0) - particle_data[id].data_1.z;
 
         let length = sqrt(dx * dx + dy * dy);
 

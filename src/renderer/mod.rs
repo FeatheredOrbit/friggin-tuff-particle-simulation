@@ -3,9 +3,8 @@ use std::sync::Arc;
 use egui::{Context, CornerRadius, TextureId, Visuals};
 use egui_wgpu::{RendererOptions, ScreenDescriptor};
 use egui_winit::State;
-use wgpu::{BackendOptions, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferUsages, Color, CommandEncoder, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, Operations, PipelineCompilationOptions, PipelineLayoutDescriptor, Queue, RequestAdapterOptions, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureView, TextureViewDescriptor, util::{BufferInitDescriptor, DeviceExt}, wgt::BufferDescriptor, FilterMode};
+use wgpu::{BackendOptions, Backends, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor, BindGroupLayoutEntry, BufferUsages, Color, CommandEncoder, ComputePipelineDescriptor, Device, DeviceDescriptor, ExperimentalFeatures, Extent3d, Features, Instance, InstanceDescriptor, InstanceFlags, Limits, MemoryBudgetThresholds, MemoryHints, Operations, PipelineCompilationOptions, PipelineLayoutDescriptor, Queue, RequestAdapterOptions, ShaderStages, Surface, SurfaceConfiguration, TextureDescriptor, TextureUsages, TextureView, TextureViewDescriptor, util::{BufferInitDescriptor, DeviceExt}, wgt::BufferDescriptor, FilterMode, Texture};
 use winit::{event::WindowEvent, window::Window};
-
 use crate::{constants::{MAX_PARTICLES, NUMBER_OF_PARTICLES}, renderer::{misc::{BindGroupLayouts, BindGroups, Buffers, ComputePipelines, RenderStage, Textures}, shader_data::{ParticleData, Uniforms}, ui::render_ui}};
 
 pub mod shader_data;
@@ -148,9 +147,9 @@ impl<'a> Renderer<'a> {
 
     }
 
-    fn create_buffers(device: &Device, config: &SurfaceConfiguration) -> Buffers {
+    fn create_buffers(device: &Device, texture: &Texture, window: Arc<Window>) -> Buffers {
         let uniforms = Uniforms {
-            data_1: [NUMBER_OF_PARTICLES, config.width / 4, config.height / 4, 0]
+            data_1: [NUMBER_OF_PARTICLES, texture.width(), texture.height(), (window.scale_factor() as f32).to_bits()]
         };
         let uniform_buffer = device.create_buffer_init(&BufferInitDescriptor {
             label: None,
@@ -173,7 +172,8 @@ impl<'a> Renderer<'a> {
     }
 
     fn create_bind_groups(
-        config: &wgpu::wgt::SurfaceConfiguration<Vec<wgpu::TextureFormat>>,
+        window: Arc<Window>,
+        config: &SurfaceConfiguration,
         device: &Device,
         egui_renderer: &mut egui_wgpu::Renderer
     ) -> (TextureIds, Buffers, BindGroupLayouts, BindGroups) {
@@ -182,7 +182,7 @@ impl<'a> Renderer<'a> {
             textures,
             texture_ids
         ) = Self::create_textures(device, config, egui_renderer);
-        let buffers = Self::create_buffers(device, config);
+        let buffers = Self::create_buffers(device, &textures.storage_1, window);
 
         let bind_group_layout_compute = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: None,
@@ -454,7 +454,7 @@ impl<'a> Renderer<'a> {
             buffers,
             bind_group_layouts,
             bind_groups
-        ) = Self::create_bind_groups(&config, &device, &mut renderer_egui);
+        ) = Self::create_bind_groups(window.clone(), &config, &device, &mut renderer_egui);
 
         let compute_pipelines = Self::create_compute_pipelines(&bind_group_layouts, &device);
 

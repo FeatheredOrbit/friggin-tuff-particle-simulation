@@ -4,6 +4,7 @@ pub struct Uniforms {
     // First slot is number of particles.
     // Second slot is screen width.
     // Third slot is screen height.
+    // W is window scale factor, needs to be sent as bits though.
     pub data_1: [u32; 4]
 }
 
