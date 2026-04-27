@@ -55,7 +55,7 @@ fn behave(id: u32) {
             blue(id, iter_id);
         }
 
-    }  
+    }
 
     bound_check(id);
 
