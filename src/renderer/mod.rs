@@ -404,7 +404,7 @@ impl<'a> Renderer<'a> {
             backend_options: BackendOptions::default(),
             display: None
         });
-
+        
         let surface = instance.create_surface(window.clone())?;
 
         let adapter = instance.request_adapter(&RequestAdapterOptions {
